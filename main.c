@@ -32,7 +32,8 @@ int open_file_map(const char* file_name,int *file_size,void **map) {
   *file_size=size;
   return file_fd;
 }
-void get_elf_header(void* map) {
+
+void dump_segment(void* map) {
     Elf64_Ehdr* elf_hdr = (Elf64_Ehdr *)map;
     Elf64_Off phoff = elf_hdr->e_phoff;
     Elf64_Half phnum = elf_hdr->e_phnum;
@@ -45,8 +46,37 @@ void get_elf_header(void* map) {
       printf(" 0x%016x | 0x%016x | 0x%016ld | 0x%016lx | 0x%016lx | 0x%016lx | 0x%016lx | 0x%016lx\n",elf_seg->p_type,elf_seg->p_flags,elf_seg->p_offset,elf_seg->p_vaddr,elf_seg->p_paddr,elf_seg->p_filesz,elf_seg->p_memsz,elf_seg->p_align);
       elf_seg = (Elf64_Phdr *)((void*)elf_seg+elf_hdr->e_phentsize);
     }
+}
+
+Elf64_Phdr* find_text_segm(Elf64_Phdr* elf_seg,const Elf64_Half phnum,const Elf64_Half	phentsize) {
+  for (int i=0;i<phnum;i++) {
+    if((elf_seg->p_type==PT_LOAD) && (elf_seg->p_flags==(PF_X|PF_R))) {
+      printf("[+] .text section found in segment number : %d,offset : 0x%lx,0x%lx\n",i,elf_seg->p_offset,elf_seg->p_vaddr);
+      return elf_seg;
+    }
+    elf_seg = (Elf64_Phdr *)((void*)elf_seg+phentsize);
+  }
+  return NULL;
+}
+
+void fing_gap(void* map) {
+    Elf64_Ehdr* elf_hdr = (Elf64_Ehdr *)map;
+    Elf64_Off phoff = elf_hdr->e_phoff;
+    Elf64_Half phnum = elf_hdr->e_phnum,phentsize = elf_hdr->e_phentsize;
+    printf("[+] Entry Point : 0x%lx \n",elf_hdr->e_entry);
+    printf("[+] phoff : %ld \n",phoff);
+    printf("[+] phnum : %d \n",phnum);
+    Elf64_Phdr* elf_seg = (Elf64_Phdr *)((void*)elf_hdr+phoff);
+    Elf64_Phdr* text_seg = find_text_segm(elf_seg,phnum,phentsize);
+    if (text_seg==NULL) {
+      printf("[-] can't find .text section");
+      exit(EXIT_FAILURE);
+    }
+
+    elf_seg = (Elf64_Phdr *)((void*)text_seg+phentsize);
 
 }
+
 
 int main(int argc,char *argv[]) {
   void *map_payl,*map_targ ;
@@ -57,7 +87,7 @@ int main(int argc,char *argv[]) {
   }
   payl_fd=open_file_map(argv[1],&payl_fsize,&map_payl);
   targ_fd=open_file_map(argv[2],&target_fsize,&map_targ);
-  get_elf_header(map_payl);
+  fing_gap(map_payl);
   return EXIT_SUCCESS;
 
 }
