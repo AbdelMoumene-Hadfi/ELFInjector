@@ -7,7 +7,7 @@
 #include <unistd.h>
 #include <elf.h>
 #include <stdint.h>
-
+#include <string.h>
 int get_file_size(const int fd) {
   struct stat statbuf;
   int status ;
@@ -59,13 +59,13 @@ Elf64_Phdr* find_text_segm(Elf64_Phdr* elf_seg,const Elf64_Half phnum,const Elf6
   }
   return NULL;
 }
-Elf64_Shdr* find_text_sect(Elf64_Shdr* elf_sec,const Elf64_Half shnum,const Elf64_Half	shentsize) {
+Elf64_Shdr* find_text_sect(Elf64_Shdr* elf_sec,const Elf64_Half shnum,const Elf64_Half	shentsize,const void* shstrndx) {
   for (int i=0;i<shnum;i++) {
-    if(strcmp(elf_sec->sh_name,".text")==0) {
-      printf("[+] .text section found offset : 0x%lx,0x%lx\n",elf_sec->sh_offset);
+    if(strcmp((char*)((void*)shstrndx+elf_sec->sh_name),".text")==0) {
+      printf("[+] .text section found at offset : 0x%lx\n",elf_sec->sh_offset);
       return elf_sec;
     }
-    elf_sec = (Elf64_Phdr *)((void*)elf_sec+shentsize);
+    elf_sec = (Elf64_Shdr *)((void*)elf_sec+shentsize);
   }
   return NULL;
 }
@@ -81,7 +81,7 @@ void fing_gap(void* map,uint64_t *gapsize,uint64_t *gapoff) {
     Elf64_Phdr* elf_seg = (Elf64_Phdr *)((void*)elf_hdr+phoff);
     Elf64_Phdr* text_seg = find_text_segm(elf_seg,phnum,phentsize);
     if (text_seg==NULL) {
-      printf("[-] can't find .text section\n");
+      printf("[-] can't find segment that contains .text section\n");
       exit(EXIT_FAILURE);
     }
     Elf64_Off text_end = text_seg->p_offset+text_seg->p_filesz;
@@ -98,10 +98,28 @@ void fing_gap(void* map,uint64_t *gapsize,uint64_t *gapoff) {
     *gapoff = text_end ;
 }
 
+void get_text_data(void* map) {
+  Elf64_Ehdr* elf_hdr = (Elf64_Ehdr *)map;
+  Elf64_Off shoff = elf_hdr->e_shoff;
+  Elf64_Half shnum = elf_hdr->e_shnum,shentsize = elf_hdr->e_shentsize,shstrndx=elf_hdr->e_shstrndx;
+  printf("[+] Entry Point : 0x%lx \n",elf_hdr->e_entry);
+  printf("[+] shoff : %ld \n",shoff);
+  printf("[+] shnum : %d \n",shnum);
+  printf("[+] shstrndx : %d \n",shstrndx);
+  Elf64_Shdr* elf_sec = (Elf64_Shdr *)((void*)elf_hdr+shoff);
+  Elf64_Shdr* sh_strtab = (Elf64_Shdr *)((void*)elf_sec+shstrndx*shentsize);
+  Elf64_Shdr* text_sec = find_text_sect(elf_sec,shnum,shentsize,(void*)(map+sh_strtab->sh_offset));
+  if(text_sec==NULL) {
+    printf("[-] can't find .text section\n");
+    exit(EXIT_FAILURE);
+  }
+  printf("[+] size of .text section : 0x%lx (bytes)\n",text_sec->sh_size);
+}
 
 int main(int argc,char *argv[]) {
   void *map_payl,*map_targ ;
-  uint64_t payl_fd,targ_fd,payl_fsize,target_fsize,gapsize,gapoff;
+  int payl_fd,targ_fd,payl_fsize,target_fsize;
+  uint64_t gapsize,gapoff;
   if(argc !=3 ) {
     printf("[Usage] %s payload target\n",argv[0]);
     return EXIT_FAILURE;
@@ -109,6 +127,7 @@ int main(int argc,char *argv[]) {
   payl_fd=open_file_map(argv[1],&payl_fsize,&map_payl);
   targ_fd=open_file_map(argv[2],&target_fsize,&map_targ);
   fing_gap(map_payl,&gapsize,&gapoff);
+  get_text_data(map_payl);
   return EXIT_SUCCESS;
 
 }
